@@ -1,0 +1,35 @@
+{
+  "frame": {
+    "name": "Search by fid",
+    "version": "1",
+    "iconUrl": "https://postimg.cc/S2HS0gxZ",
+    "homeUrl": "https://search-by-fid.vercel.app/",
+    "imageUrl": "https://postimg.cc/S2HS0gxZ",
+    "buttonTitle": "Start Searching",
+    "splashImageUrl": "https://postimg.cc/hztQsDCX",
+    "splashBackgroundColor": "#0D0D0F",
+    "webhookUrl": "https://search-by-fid.vercel.app//api/webhook",
+    "subtitle": "Search user by fid",
+    "description": "Search any account using fid",
+    "primaryCategory": "utility",
+    "tags": [
+      "search",
+      "fid",
+      "username"
+    ],
+    "tagline": "Search user by fid",
+    "ogTitle": "Search by fid",
+    "ogDescription": "Search any Farcaster user by FID. Instantly see who a specific FID is assigned to.",
+    "ogImageUrl": "https://postimg.cc/S2HS0gxZ",
+    "heroImageUrl": "https://postimg.cc/S2HS0gxZ",
+    "castShareUrl": "https://warpcast.com/~/compose?text=Lookup+any+Farcaster+FID",
+    "screenshotUrls": [
+      "https://postimg.cc/HrNLmWnL"
+    ]
+  },
+  "accountAssociation": {
+    "header": "eyJmaWQiOjEzNzEyODgsInR5cGUiOiJhdXRoIiwia2V5IjoiMHg4NGM0N0JDNDBhNDY4MGI5QjFjM2I2YUY3ZkZjYjg4ODhkYzBEMzU3In0",
+    "payload": "eyJkb21haW4iOiJodHRwczovL3NlYXJjaC1ieS1maWQudmVyY2VsLmFwcC8ifQ",
+    "signature": "g4mKzGL3TNyQ3ohiV+ps5rLIYhyog70gnM7pJMwQUYJf53IKKSyvriIKC8iDpJ+YZRmC+/NduB3Vmq2ENZe0ERs="
+  }
+}
