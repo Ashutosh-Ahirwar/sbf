@@ -16,6 +16,7 @@ type Profile = {
 
 const DONATION_ADDRESS = "0xa6DEe9FdE9E1203ad02228f00bF10235d9Ca3752";
 const MINIAPP_NAME = "Search by FID";
+const DONATION_STORAGE_KEY = "sbf:donation:expanded";
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -26,6 +27,17 @@ export default function Home() {
 
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
+  // donation pill expanded state (persisted)
+  const [donationExpanded, setDonationExpanded] = useState<boolean>(() => {
+    try {
+      const v = typeof window !== "undefined" ? localStorage.getItem(DONATION_STORAGE_KEY) : null;
+      return v === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  // SDK ready logic (unchanged)
   useEffect(() => {
     let mounted = true;
     const MAX_ATTEMPTS = 12;
@@ -78,6 +90,13 @@ export default function Home() {
     };
   }, []);
 
+  // persist donationExpanded
+  useEffect(() => {
+    try {
+      localStorage.setItem(DONATION_STORAGE_KEY, donationExpanded ? "1" : "0");
+    } catch {}
+  }, [donationExpanded]);
+
   function showToast(message: string, ms = 2500) {
     const id = Date.now();
     setToast({ msg: message, id });
@@ -111,7 +130,7 @@ export default function Home() {
         setProfile(json);
       }
     } catch (err: any) {
-      setErrorMsg("Network error: " + err?.message);
+      setErrorMsg(`Network error: ${err?.message ?? String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -120,15 +139,10 @@ export default function Home() {
   function composeCastText(p: Profile) {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const handle = p.username ? `@${p.username}` : `fid:${p.fid}`;
-    const shortBio = p.bio
-      ? p.bio.length > 140
-        ? p.bio.slice(0, 137) + "…"
-        : p.bio
-      : "";
-    const bioSection = shortBio ? `\n\n${shortBio}` : "";
-    const profileLink = p.username ? `\n\nhttps://farcaster.xyz/${p.username}` : "";
+    const shortBio = p.bio ? (p.bio.length > 140 ? p.bio.slice(0, 137) + "…" : p.bio) : "";
+    const profileLink = p.username ? `\n\nhttps://farcaster.xyz/${encodeURIComponent(p.username)}` : "";
     const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${MINIAPP_NAME}: ${origin}`;
-
+    const bioSection = shortBio ? `\n\n${shortBio}` : "";
     return `${handle}\nFID: ${p.fid}${bioSection}${profileLink}${teaser}\n\n(Shared via ${MINIAPP_NAME})`;
   }
 
@@ -183,6 +197,11 @@ export default function Home() {
     if (e.key === "Enter" && !loading) searchFid();
   }
 
+  // Toggle expand/collapse
+  function toggleDonation() {
+    setDonationExpanded((v) => !v);
+  }
+
   return (
     <main className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center pb-28 sm:pb-0">
       <div className="w-full max-w-2xl">
@@ -201,14 +220,13 @@ export default function Home() {
             onClick={searchFid}
             disabled={loading}
             className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white disabled:opacity-60"
+            type="button"
           >
             {loading ? "Searching…" : "Search"}
           </button>
         </div>
 
-        {errorMsg && (
-          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>
-        )}
+        {errorMsg && <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>}
 
         {profile && (
           <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black">
@@ -218,7 +236,6 @@ export default function Home() {
                 alt={profile.displayName ?? ""}
                 className="w-24 h-24 rounded-md object-cover bg-gray-100 mx-auto sm:mx-0"
               />
-
               <div className="flex-1">
                 <div className="flex flex-col sm:flex-row sm:justify-between">
                   <div>
@@ -235,14 +252,13 @@ export default function Home() {
                   </div>
                 </div>
 
-                {profile.bio && (
-                  <p className="mt-3 text-sm text-gray-800 leading-relaxed">{profile.bio}</p>
-                )}
+                {profile.bio && <p className="mt-3 text-sm text-gray-800 leading-relaxed">{profile.bio}</p>}
 
                 <div className="mt-4 flex flex-col sm:flex-row gap-3">
                   <button
                     onClick={() => goToProfile(profile)}
                     className="w-full sm:w-auto px-4 py-3 bg-fuchsia-600 text-white rounded-md shadow"
+                    type="button"
                   >
                     Go to profile
                   </button>
@@ -251,6 +267,7 @@ export default function Home() {
                     onClick={() => shareAsCast(profile)}
                     disabled={sharing}
                     className="w-full sm:w-auto px-4 py-3 border rounded-md bg-neutral-100 text-neutral-900 disabled:opacity-60"
+                    type="button"
                   >
                     {sharing ? "Sharing…" : "Share as cast"}
                   </button>
@@ -264,31 +281,123 @@ export default function Home() {
           </article>
         )}
 
-        {!profile && !errorMsg && (
-          <p className="mt-6 text-sm text-neutral-400">Enter a numeric FID and press Search.</p>
-        )}
+        {!profile && !errorMsg && <p className="mt-6 text-sm text-neutral-400">Enter a numeric FID and press Search.</p>}
       </div>
 
-      {/* Donation pill */}
-      <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:translate-x-0">
-        <div className="flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow backdrop-blur">
-          <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp</span>
-
-          <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono max-w-[220px] truncate">
-            {DONATION_ADDRESS}
-          </code>
-
-          <button
-            onClick={copyDonationAddress}
-            className="text-xs bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded"
+      {/* Expandable Donation pill */}
+      <div
+        className="fixed z-50 left-1/2 -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:translate-x-0"
+        aria-hidden={false}
+      >
+        <div
+          className={`overflow-hidden rounded-full shadow backdrop-blur transition-all duration-300 ${
+            donationExpanded ? "rounded-xl" : "rounded-full"
+          }`}
+          style={{ width: donationExpanded ? 360 : "auto" }}
+        >
+          <div
+            className={`flex items-center gap-2 bg-neutral-800 px-3 py-2 transition-all duration-300 ${
+              donationExpanded ? "rounded-t-xl" : "rounded-full"
+            }`}
           >
-            Copy
-          </button>
+            <div className="flex-1 min-w-0">
+              {!donationExpanded ? (
+                <div className="flex items-center gap-2">
+                  <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono max-w-[220px] truncate">
+                    {DONATION_ADDRESS}
+                  </code>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-white">Support this miniapp</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDonationExpanded(false);
+                      }}
+                      aria-label="Collapse donation"
+                      className="text-xs text-neutral-300 hover:text-white px-2 py-1 rounded"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <code className="bg-black/60 text-xs px-3 py-2 rounded text-white font-mono break-all">
+                      {DONATION_ADDRESS}
+                    </code>
+
+                    {/* Simple visual QR placeholder - replace with real QR generation if desired */}
+                    <div className="w-20 h-20 bg-white/5 rounded grid place-items-center text-[10px] text-white/80">
+                      QR
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-neutral-300 mt-1">
+                    Copy the address to donate or scan the QR code with your wallet.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={copyDonationAddress}
+                className="text-xs bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded"
+                aria-label="Copy donation address"
+              >
+                Copy
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleDonation}
+                aria-expanded={donationExpanded}
+                aria-controls="donation-expanded"
+                className="p-1 rounded hover:bg-white/5"
+                title={donationExpanded ? "Collapse" : "Expand"}
+              >
+                {/* chevron icon (simple) */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`h-4 w-4 text-white transition-transform duration-200 ${
+                    donationExpanded ? "rotate-180" : "rotate-0"
+                  }`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Expanded content panel */}
+          <div
+            id="donation-expanded"
+            className={`bg-neutral-800 px-3 pb-3 transition-all duration-300 ${
+              donationExpanded ? "max-h-[260px] opacity-100 pt-3" : "max-h-0 opacity-0 pt-0"
+            }`}
+            aria-hidden={!donationExpanded}
+          >
+            {/* content already included above in the expanded section for visual consistency */}
+            {/* This section is kept minimal; you can duplicate or move content here if you prefer */}
+          </div>
         </div>
       </div>
 
       {toast && (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow"
+          role="status"
+          aria-live="polite"
+        >
           {toast.msg}
         </div>
       )}
