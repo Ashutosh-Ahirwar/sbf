@@ -27,13 +27,73 @@ export default function Home() {
   // Toast state
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
+  // Robust sdk.actions.ready() caller:
   useEffect(() => {
-    // best-effort: if sdk is available, try to mark it ready
-    try {
-      (sdk as any)?.actions?.ready?.().catch(() => {});
-    } catch {
-      // ignore if sdk import behaves differently at runtime
+    let mounted = true;
+    const MAX_ATTEMPTS = 12;
+    const RETRY_DELAY_MS = 400;
+
+    async function tryCallReady(sdkObj: any) {
+      if (!sdkObj?.actions?.ready) return false;
+      try {
+        await sdkObj.actions.ready();
+        console.info("Farcaster SDK: actions.ready() succeeded");
+        return true;
+      } catch (err) {
+        console.warn("Farcaster SDK: actions.ready() threw:", err);
+        return false;
+      }
     }
+
+    async function initReady() {
+      // 1) Try top-level imported sdk first (fast path)
+      try {
+        if ((sdk as any) && (sdk as any).actions) {
+          const ok = await tryCallReady(sdk);
+          if (ok) return;
+        }
+      } catch (e) {
+        // ignore and continue
+      }
+
+      // 2) Try dynamic import once (some hosts provide the package at runtime)
+      let importedSdk: any = null;
+      try {
+        const mod = await import("@farcaster/miniapp-sdk");
+        importedSdk = (mod && (mod.sdk ?? mod.default ?? mod)) as any;
+        if (importedSdk) {
+          const ok = await tryCallReady(importedSdk);
+          if (ok) return;
+        }
+      } catch (err) {
+        // dynamic import may fail in non-Farcaster environments — that's ok
+        console.debug("Dynamic import of @farcaster/miniapp-sdk failed (expected outside Farcaster):", err);
+      }
+
+      // 3) Retry loop: check for injected global sdk or previously imported module
+      for (let attempt = 1; mounted && attempt <= MAX_ATTEMPTS; attempt++) {
+        // Candidate order: importedSdk, globalThis.sdk, top-level sdk
+        const candidate = importedSdk ?? (globalThis as any).sdk ?? (sdk as any);
+        if (candidate) {
+          const ok = await tryCallReady(candidate);
+          if (ok) return;
+        } else {
+          console.debug(`Farcaster SDK not present (attempt ${attempt}/${MAX_ATTEMPTS})`);
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+
+      // If we get here, ready() was not successfully called
+      console.warn(
+        "Farcaster SDK actions.ready() was not called after retries. If you're testing outside the Farcaster in-app browser this is expected."
+      );
+    }
+
+    initReady();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   function showToast(message: string, ms = 2500) {
@@ -260,7 +320,7 @@ export default function Home() {
       </div>
 
       {/* Donation pill */}
-      <div className="fixed z-50 left-1/2 transform -translate-x-1/2 bottom-4 sm:right-6 sm:left:auto sm:transform-none sm:translate-x-0">
+      <div className="fixed z-50 left-1/2 transform -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:transform-none sm:translate-x-0">
         <div className="flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow backdrop-blur">
           <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp 💜</span>
 
