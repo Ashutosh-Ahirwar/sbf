@@ -24,10 +24,8 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
 
-  // Toast state
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
-  // Robust sdk.actions.ready() caller:
   useEffect(() => {
     let mounted = true;
     const MAX_ATTEMPTS = 12;
@@ -39,58 +37,42 @@ export default function Home() {
         await sdkObj.actions.ready();
         console.info("Farcaster SDK: actions.ready() succeeded");
         return true;
-      } catch (err) {
-        console.warn("Farcaster SDK: actions.ready() threw:", err);
+      } catch {
         return false;
       }
     }
 
     async function initReady() {
-      // 1) Try top-level imported sdk first (fast path)
       try {
-        if ((sdk as any) && (sdk as any).actions) {
+        if ((sdk as any)?.actions) {
           const ok = await tryCallReady(sdk);
           if (ok) return;
         }
-      } catch (e) {
-        // ignore and continue
-      }
+      } catch {}
 
-      // 2) Try dynamic import once (some hosts provide the package at runtime)
       let importedSdk: any = null;
       try {
         const mod = await import("@farcaster/miniapp-sdk");
-        importedSdk = (mod && (mod.sdk ?? mod.default ?? mod)) as any;
+        importedSdk = mod.sdk ?? mod.default ?? mod;
         if (importedSdk) {
           const ok = await tryCallReady(importedSdk);
           if (ok) return;
         }
-      } catch (err) {
-        // dynamic import may fail in non-Farcaster environments — that's ok
-        console.debug("Dynamic import of @farcaster/miniapp-sdk failed (expected outside Farcaster):", err);
-      }
+      } catch {}
 
-      // 3) Retry loop: check for injected global sdk or previously imported module
       for (let attempt = 1; mounted && attempt <= MAX_ATTEMPTS; attempt++) {
-        // Candidate order: importedSdk, globalThis.sdk, top-level sdk
-        const candidate = importedSdk ?? (globalThis as any).sdk ?? (sdk as any);
+        const candidate = importedSdk ?? (globalThis as any).sdk ?? sdk;
         if (candidate) {
           const ok = await tryCallReady(candidate);
           if (ok) return;
-        } else {
-          console.debug(`Farcaster SDK not present (attempt ${attempt}/${MAX_ATTEMPTS})`);
         }
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
 
-      // If we get here, ready() was not successfully called
-      console.warn(
-        "Farcaster SDK actions.ready() was not called after retries. If you're testing outside the Farcaster in-app browser this is expected."
-      );
+      console.warn("Farcaster SDK ready() not called — expected outside client.");
     }
 
     initReady();
-
     return () => {
       mounted = false;
     };
@@ -105,10 +87,7 @@ export default function Home() {
   }
 
   function farcasterExternalLink(p: Profile) {
-    if (p.username && p.username.trim().length > 0) {
-      return `https://farcaster.xyz/${encodeURIComponent(p.username)}`;
-    }
-    return null;
+    return p.username ? `https://farcaster.xyz/${encodeURIComponent(p.username)}` : null;
   }
 
   async function searchFid() {
@@ -116,14 +95,8 @@ export default function Home() {
     setProfile(null);
 
     const fid = query.trim();
-    if (!fid) {
-      setErrorMsg("Please enter a numeric FID.");
-      return;
-    }
-    if (!/^\d+$/.test(fid)) {
-      setErrorMsg("FID must be numeric.");
-      return;
-    }
+    if (!fid) return setErrorMsg("Please enter a numeric FID.");
+    if (!/^\d+$/.test(fid)) return setErrorMsg("FID must be numeric.");
 
     setLoading(true);
     try {
@@ -134,43 +107,42 @@ export default function Home() {
         if (res.status === 404) setErrorMsg("FID not found.");
         else if (res.status === 402) setErrorMsg("This FID requires paid Neynar credits.");
         else setErrorMsg(json?.error ?? "Unknown error");
-        setProfile(null);
       } else {
         setProfile(json);
-        setErrorMsg(null);
       }
     } catch (err: any) {
-      setErrorMsg("Network error: " + (err?.message ?? String(err)));
-      setProfile(null);
+      setErrorMsg("Network error: " + err?.message);
     } finally {
       setLoading(false);
     }
   }
 
-  // Compose cast text (with teaser + miniapp link)
   function composeCastText(p: Profile) {
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://your-miniapp.example";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
     const handle = p.username ? `@${p.username}` : `fid:${p.fid}`;
-    const shortBio = p.bio ? (p.bio.length > 140 ? p.bio.slice(0, 137) + "…" : p.bio) : "";
-    const profileLink = p.username ? `\n\nhttps://farcaster.xyz/${encodeURIComponent(p.username)}` : "";
-    const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${MINIAPP_NAME}: ${origin}`;
+    const shortBio = p.bio
+      ? p.bio.length > 140
+        ? p.bio.slice(0, 137) + "…"
+        : p.bio
+      : "";
     const bioSection = shortBio ? `\n\n${shortBio}` : "";
+    const profileLink = p.username ? `\n\nhttps://farcaster.xyz/${p.username}` : "";
+    const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${MINIAPP_NAME}: ${origin}`;
+
     return `${handle}\nFID: ${p.fid}${bioSection}${profileLink}${teaser}\n\n(Shared via ${MINIAPP_NAME})`;
   }
 
-  // Share as cast — uses SDK if available, else clipboard fallback
   async function shareAsCast(p: Profile) {
     setSharing(true);
     const text = composeCastText(p);
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://your-miniapp.example";
-    const embeds = [{ type: "link", url: origin, title: MINIAPP_NAME, description: "Look up Farcaster users by FID" }];
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const embeds = [{ type: "link", url: origin, title: MINIAPP_NAME }];
 
     try {
       if ((sdk as any)?.actions?.createCast) {
         try {
           await (sdk as any).actions.createCast({ text, embeds });
           showToast("Cast created.");
-          setSharing(false);
           return;
         } catch {}
       }
@@ -179,21 +151,14 @@ export default function Home() {
         try {
           await (sdk as any).actions.publish({ type: "cast", body: { text, embeds } });
           showToast("Cast published.");
-          setSharing(false);
           return;
         } catch {}
       }
 
       await navigator.clipboard.writeText(text);
-      showToast("Cast copied to clipboard. Paste into Farcaster.");
-    } catch (err) {
-      console.error(err);
-      try {
-        await navigator.clipboard.writeText(text);
-        showToast("Could not publish. Cast copied to clipboard.");
-      } catch {
-        showToast("Unable to share or copy.");
-      }
+      showToast("Cast copied to clipboard.");
+    } catch {
+      showToast("Unable to share or copy.");
     } finally {
       setSharing(false);
     }
@@ -201,14 +166,10 @@ export default function Home() {
 
   function goToProfile(p: Profile) {
     const url = farcasterExternalLink(p);
-    if (!url) {
-      showToast("This profile has no username to open externally.");
-      return;
-    }
+    if (!url) return showToast("This profile has no username to open externally.");
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  // Copy donation address helper (single implementation)
   async function copyDonationAddress() {
     try {
       await navigator.clipboard.writeText(DONATION_ADDRESS);
@@ -218,20 +179,15 @@ export default function Home() {
     }
   }
 
-  // handle Enter key
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (!loading) searchFid();
-    }
+    if (e.key === "Enter" && !loading) searchFid();
   }
 
   return (
-    <main className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center">
+    <main className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center pb-28 sm:pb-0">
       <div className="w-full max-w-2xl">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-gray-200">{MINIAPP_NAME}</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">{MINIAPP_NAME}</h1>
 
-        {/* Search row */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <input
             value={query}
@@ -240,55 +196,51 @@ export default function Home() {
             placeholder="Enter FID (e.g. 2)"
             className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-600"
             inputMode="numeric"
-            aria-label="Enter FID"
           />
           <button
-            type="button"
             onClick={searchFid}
             disabled={loading}
-            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:opacity-95 text-white font-medium disabled:opacity-60"
-            aria-disabled={loading}
+            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white disabled:opacity-60"
           >
             {loading ? "Searching…" : "Search"}
           </button>
         </div>
 
-        {/* Error */}
         {errorMsg && (
-          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded" role="alert">
-            {errorMsg}
-          </div>
+          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>
         )}
 
-        {/* Profile card */}
         {profile && (
-          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black" aria-live="polite">
+          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black">
             <div className="flex flex-col sm:flex-row gap-4">
               <img
                 src={profile.avatarUrl ?? "/default-avatar.svg"}
-                alt={profile.displayName ?? `fid:${profile.fid}`}
-                className="w-24 h-24 rounded-md bg-gray-100 object-cover mx-auto sm:mx-0"
-                onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/default-avatar.svg")}
+                alt={profile.displayName ?? ""}
+                className="w-24 h-24 rounded-md object-cover bg-gray-100 mx-auto sm:mx-0"
               />
 
               <div className="flex-1">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                <div className="flex flex-col sm:flex-row sm:justify-between">
                   <div>
-                    <div className="text-lg sm:text-xl font-semibold">{profile.displayName ?? `fid:${profile.fid}`}</div>
-                    <div className="text-sm text-gray-700 mt-1">@{profile.username ?? `fid:${profile.fid}`}</div>
+                    <div className="text-lg sm:text-xl font-semibold">
+                      {profile.displayName ?? `fid:${profile.fid}`}
+                    </div>
+                    <div className="text-sm text-gray-700 mt-1">
+                      @{profile.username ?? `fid:${profile.fid}`}
+                    </div>
                   </div>
 
                   <div className="hidden sm:block text-sm text-gray-700">
-                    <b className="text-gray-900">{profile.followerCount ?? "—"}</b> Followers
+                    <b>{profile.followerCount ?? "—"}</b> Followers
                   </div>
                 </div>
 
-                {profile.bio && <p className="mt-3 text-gray-800 text-sm leading-relaxed">{profile.bio}</p>}
+                {profile.bio && (
+                  <p className="mt-3 text-sm text-gray-800 leading-relaxed">{profile.bio}</p>
+                )}
 
-                {/* Buttons stack on mobile */}
                 <div className="mt-4 flex flex-col sm:flex-row gap-3">
                   <button
-                    type="button"
                     onClick={() => goToProfile(profile)}
                     className="w-full sm:w-auto px-4 py-3 bg-fuchsia-600 text-white rounded-md shadow"
                   >
@@ -296,7 +248,6 @@ export default function Home() {
                   </button>
 
                   <button
-                    type="button"
                     onClick={() => shareAsCast(profile)}
                     disabled={sharing}
                     className="w-full sm:w-auto px-4 py-3 border rounded-md bg-neutral-100 text-neutral-900 disabled:opacity-60"
@@ -305,9 +256,8 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* follower count visible on mobile below */}
                 <div className="mt-3 sm:hidden text-sm text-gray-700">
-                  <b className="text-gray-900">{profile.followerCount ?? "—"}</b> Followers
+                  <b>{profile.followerCount ?? "—"}</b> Followers
                 </div>
               </div>
             </div>
@@ -320,16 +270,15 @@ export default function Home() {
       </div>
 
       {/* Donation pill */}
-      <div className="fixed z-50 left-1/2 transform -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:transform-none sm:translate-x-0">
+      <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:translate-x-0">
         <div className="flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow backdrop-blur">
-          <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp 💜</span>
+          <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp</span>
 
           <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono max-w-[220px] truncate">
             {DONATION_ADDRESS}
           </code>
 
           <button
-            type="button"
             onClick={copyDonationAddress}
             className="text-xs bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded"
           >
@@ -338,13 +287,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
-        <div
-          className="fixed left-1/2 transform -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow"
-          role="status"
-          aria-live="polite"
-        >
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow">
           {toast.msg}
         </div>
       )}
