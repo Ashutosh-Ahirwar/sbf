@@ -22,7 +22,12 @@
 
 # misc
 .DS_Store
+Thumbs.db
+ehthumbs.db
+
 *.pem
+*.log
+logs/
 
 # debug
 npm-debug.log*
@@ -30,8 +35,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (can opt-in to commit if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +45,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE folders
+.vscode/
+.idea/
+
+# optional build/cache folders sometimes created by tools
+.cache/
+dist/
+
+# optional lockfiles (pick only one if using specific package manager)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
