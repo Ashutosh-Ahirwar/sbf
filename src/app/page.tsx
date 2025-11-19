@@ -28,7 +28,12 @@ export default function Home() {
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
   useEffect(() => {
-    sdk.actions?.ready?.().catch(() => {});
+    // best-effort: if sdk is available, try to mark it ready
+    try {
+      (sdk as any)?.actions?.ready?.().catch(() => {});
+    } catch {
+      // ignore if sdk import behaves differently at runtime
+    }
   }, []);
 
   function showToast(message: string, ms = 2500) {
@@ -153,24 +158,36 @@ export default function Home() {
     }
   }
 
+  // handle Enter key
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!loading) searchFid();
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center">
+    <main className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center">
       <div className="w-full max-w-2xl">
         <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-gray-200">{MINIAPP_NAME}</h1>
 
-        {/* Search row - stacks on small screens */}
+        {/* Search row */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
             placeholder="Enter FID (e.g. 2)"
-            className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none"
+            className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-600"
             inputMode="numeric"
+            aria-label="Enter FID"
           />
           <button
+            type="button"
             onClick={searchFid}
             disabled={loading}
-            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium"
+            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:opacity-95 text-white font-medium disabled:opacity-60"
+            aria-disabled={loading}
           >
             {loading ? "Searching…" : "Search"}
           </button>
@@ -178,12 +195,14 @@ export default function Home() {
 
         {/* Error */}
         {errorMsg && (
-          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>
+          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded" role="alert">
+            {errorMsg}
+          </div>
         )}
 
         {/* Profile card */}
         {profile && (
-          <div className="bg-white rounded-lg shadow p-4 sm:p-6 text-black">
+          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black" aria-live="polite">
             <div className="flex flex-col sm:flex-row gap-4">
               <img
                 src={profile.avatarUrl ?? "/default-avatar.svg"}
@@ -195,7 +214,7 @@ export default function Home() {
               <div className="flex-1">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                   <div>
-                    <div className="text-lg sm:text-xl font-semibold">{profile.displayName}</div>
+                    <div className="text-lg sm:text-xl font-semibold">{profile.displayName ?? `fid:${profile.fid}`}</div>
                     <div className="text-sm text-gray-700 mt-1">@{profile.username ?? `fid:${profile.fid}`}</div>
                   </div>
 
@@ -209,16 +228,18 @@ export default function Home() {
                 {/* Buttons stack on mobile */}
                 <div className="mt-4 flex flex-col sm:flex-row gap-3">
                   <button
+                    type="button"
                     onClick={() => goToProfile(profile)}
-                    className="w-full sm:w-auto px-4 py-3 bg-purple-600 text-white rounded-md shadow"
+                    className="w-full sm:w-auto px-4 py-3 bg-fuchsia-600 text-white rounded-md shadow"
                   >
                     Go to profile
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => shareAsCast(profile)}
                     disabled={sharing}
-                    className="w-full sm:w-auto px-4 py-3 border rounded-md bg-neutral-100 text-neutral-900"
+                    className="w-full sm:w-auto px-4 py-3 border rounded-md bg-neutral-100 text-neutral-900 disabled:opacity-60"
                   >
                     {sharing ? "Sharing…" : "Share as cast"}
                   </button>
@@ -230,7 +251,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </article>
         )}
 
         {!profile && !errorMsg && (
@@ -238,24 +259,17 @@ export default function Home() {
         )}
       </div>
 
-      {/* Donation box: center-bottom on mobile, bottom-right on larger screens */}
-      <div
-        className="fixed z-50"
-        style={{
-          left: "50%",
-          transform: "translateX(-50%)",
-          bottom: 12,
-          maxWidth: "calc(100% - 32px)",
-        }}
-      >
-        <div className="sm:ml-auto sm:mr-4 sm:translate-x-0 sm:right-6 sm:left:auto flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow">
+      {/* Donation pill */}
+      <div className="fixed z-50 left-1/2 transform -translate-x-1/2 bottom-4 sm:right-6 sm:left:auto sm:transform-none sm:translate-x-0">
+        <div className="flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow backdrop-blur">
           <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp 💜</span>
 
-          <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono">
+          <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono max-w-[220px] truncate">
             {DONATION_ADDRESS}
           </code>
 
           <button
+            type="button"
             onClick={copyDonationAddress}
             className="text-xs bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded"
           >
@@ -269,10 +283,11 @@ export default function Home() {
         <div
           className="fixed left-1/2 transform -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow"
           role="status"
+          aria-live="polite"
         >
           {toast.msg}
         </div>
       )}
-    </div>
+    </main>
   );
 }
