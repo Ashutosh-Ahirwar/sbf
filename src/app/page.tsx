@@ -16,7 +16,6 @@ type Profile = {
 
 const DONATION_ADDRESS = "0xa6DEe9FdE9E1203ad02228f00bF10235d9Ca3752";
 const MINIAPP_NAME = "Search by FID";
-const DONATION_STORAGE_KEY = "sbf_hide_donation";
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -24,71 +23,45 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
-
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
 
-  // donation visibility state (persisted in localStorage)
-  const [showDonation, setShowDonation] = useState<boolean>(true);
+  // Support popover visibility
+  const [showDonation, setShowDonation] = useState(false);
 
-  // Read donation visibility from localStorage on mount
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(DONATION_STORAGE_KEY);
-      setShowDonation(v !== "1");
-    } catch {
-      // ignore storage errors (e.g., private mode)
-      setShowDonation(true);
-    }
-  }, []);
-
-  // Robust sdk.actions.ready() caller:
+  // SDK READY HANDLER (same robust logic)
   useEffect(() => {
     let mounted = true;
     const MAX_ATTEMPTS = 12;
     const RETRY_DELAY_MS = 400;
 
-    async function tryCallReady(sdkObj: any) {
+    async function tryReady(sdkObj: any) {
       if (!sdkObj?.actions?.ready) return false;
       try {
         await sdkObj.actions.ready();
-        console.info("Farcaster SDK: actions.ready() succeeded");
         return true;
       } catch {
         return false;
       }
     }
 
-    async function initReady() {
-      try {
-        if ((sdk as any)?.actions) {
-          const ok = await tryCallReady(sdk);
-          if (ok) return;
-        }
-      } catch {}
+    async function init() {
+      if (await tryReady(sdk)) return;
 
-      let importedSdk: any = null;
+      let dynamic: any = null;
       try {
         const mod = await import("@farcaster/miniapp-sdk");
-        importedSdk = mod.sdk ?? mod.default ?? mod;
-        if (importedSdk) {
-          const ok = await tryCallReady(importedSdk);
-          if (ok) return;
-        }
+        dynamic = mod.sdk ?? mod.default ?? mod;
+        if (dynamic && (await tryReady(dynamic))) return;
       } catch {}
 
-      for (let attempt = 1; mounted && attempt <= MAX_ATTEMPTS; attempt++) {
-        const candidate = importedSdk ?? (globalThis as any).sdk ?? sdk;
-        if (candidate) {
-          const ok = await tryCallReady(candidate);
-          if (ok) return;
-        }
+      for (let i = 0; mounted && i < MAX_ATTEMPTS; i++) {
+        const candidate = dynamic ?? (globalThis as any).sdk ?? sdk;
+        if (candidate && (await tryReady(candidate))) return;
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
-
-      console.warn("Farcaster SDK ready() not called — expected outside client.");
     }
 
-    initReady();
+    init();
     return () => {
       mounted = false;
     };
@@ -127,7 +100,7 @@ export default function Home() {
         setProfile(json);
       }
     } catch (err: any) {
-      setErrorMsg("Network error: " + (err?.message ?? String(err)));
+      setErrorMsg("Network error: " + err?.message);
     } finally {
       setLoading(false);
     }
@@ -136,12 +109,12 @@ export default function Home() {
   function composeCastText(p: Profile) {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const handle = p.username ? `@${p.username}` : `fid:${p.fid}`;
-    const shortBio = p.bio ? (p.bio.length > 140 ? p.bio.slice(0, 137) + "…" : p.bio) : "";
-    const bioSection = shortBio ? `\n\n${shortBio}` : "";
-    const profileLink = p.username ? `\n\nhttps://farcaster.xyz/${p.username}` : "";
-    const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${MINIAPP_NAME}: ${origin}`;
-
-    return `${handle}\nFID: ${p.fid}${bioSection}${profileLink}${teaser}\n\n(Shared via ${MINIAPP_NAME})`;
+    const bio = p.bio ?? "";
+    const trimmedBio = bio.length > 140 ? bio.slice(0, 137) + "…" : bio;
+    const bioSection = trimmedBio ? `\n\n${trimmedBio}` : "";
+    const link = p.username ? `\n\nhttps://farcaster.xyz/${p.username}` : "";
+    const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${origin}`;
+    return `${handle}\nFID: ${p.fid}${bioSection}${link}${teaser}\n\n(Shared via ${MINIAPP_NAME})`;
   }
 
   async function shareAsCast(p: Profile) {
@@ -151,67 +124,46 @@ export default function Home() {
     const embeds = [{ type: "link", url: origin, title: MINIAPP_NAME }];
 
     try {
-      if ((sdk as any)?.actions?.createCast) {
+      if ((sdk as any)?.actions?.createCast)
         try {
           await (sdk as any).actions.createCast({ text, embeds });
           showToast("Cast created.");
           return;
         } catch {}
-      }
 
-      if ((sdk as any)?.actions?.publish) {
+      if ((sdk as any)?.actions?.publish)
         try {
           await (sdk as any).actions.publish({ type: "cast", body: { text, embeds } });
           showToast("Cast published.");
           return;
         } catch {}
-      }
 
       await navigator.clipboard.writeText(text);
       showToast("Cast copied to clipboard.");
     } catch {
-      showToast("Unable to share or copy.");
+      showToast("Unable to share.");
     } finally {
       setSharing(false);
     }
   }
 
-  function goToProfile(p: Profile) {
-    const url = farcasterExternalLink(p);
-    if (!url) return showToast("This profile has no username to open externally.");
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
   async function copyDonationAddress() {
     try {
       await navigator.clipboard.writeText(DONATION_ADDRESS);
-      showToast("Donation address copied");
+      showToast("Address copied");
     } catch {
       showToast("Copy failed");
     }
   }
 
+  function goToProfile(p: Profile) {
+    const url = farcasterExternalLink(p);
+    if (!url) return showToast("This profile has no username.");
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !loading) searchFid();
-  }
-
-  // dismiss donation pill and persist choice
-  function dismissDonation() {
-    try {
-      localStorage.setItem(DONATION_STORAGE_KEY, "1");
-    } catch {
-      // ignore
-    }
-    setShowDonation(false);
-    showToast("Donation hidden");
-  }
-
-  // optional: allow user to re-show donation pill (not used in UI currently)
-  function resetDonationVisibility() {
-    try {
-      localStorage.removeItem(DONATION_STORAGE_KEY);
-    } catch {}
-    setShowDonation(true);
   }
 
   return (
@@ -219,37 +171,36 @@ export default function Home() {
       <div className="w-full max-w-2xl">
         <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">{MINIAPP_NAME}</h1>
 
+        {/* Search */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Enter FID (e.g. 2)"
-            className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-600"
             inputMode="numeric"
-            aria-label="Enter FID"
+            className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-600"
           />
           <button
             onClick={searchFid}
             disabled={loading}
-            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white disabled:opacity-60"
+            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white font-medium disabled:opacity-60"
           >
             {loading ? "Searching…" : "Search"}
           </button>
         </div>
 
         {errorMsg && (
-          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded" role="alert">
-            {errorMsg}
-          </div>
+          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>
         )}
 
+        {/* Profile */}
         {profile && (
-          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black" aria-live="polite">
+          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black">
             <div className="flex flex-col sm:flex-row gap-4">
               <img
                 src={profile.avatarUrl ?? "/default-avatar.svg"}
-                alt={profile.displayName ?? ""}
+                alt=""
                 className="w-24 h-24 rounded-md object-cover bg-gray-100 mx-auto sm:mx-0"
               />
 
@@ -284,7 +235,7 @@ export default function Home() {
                   <button
                     onClick={() => shareAsCast(profile)}
                     disabled={sharing}
-                    className="w-full sm:w-auto px-4 py-3 border rounded-md bg-neutral-100 text-neutral-900 disabled:opacity-60"
+                    className="w-full sm:w-auto px-4 py-3 rounded-md border bg-neutral-100 text-neutral-900 disabled:opacity-60"
                   >
                     {sharing ? "Sharing…" : "Share as cast"}
                   </button>
@@ -303,42 +254,51 @@ export default function Home() {
         )}
       </div>
 
-      {/* Donation pill (dismissible) */}
-      {showDonation && (
-        <div className="fixed z-50 left-1/2 -translate-x-1/2 bottom-4 sm:right-6 sm:left-auto sm:translate-x-0">
-          <div className="flex items-center gap-2 bg-neutral-800 rounded-full px-3 py-2 shadow backdrop-blur">
-            <span className="text-xs text-neutral-300 hidden sm:block">Support this miniapp</span>
+      {/* -------------------------------- */}
+      {/* Support Button + Expandable Panel */}
+      {/* -------------------------------- */}
+      <div className="fixed bottom-4 right-4 z-50">
 
-            <code className="bg-black/60 text-xs px-2 py-1 rounded text-white font-mono max-w-[220px] truncate">
+        {/* Support button (when collapsed) */}
+        {!showDonation && (
+          <button
+            onClick={() => setShowDonation(true)}
+            className="px-4 py-2 bg-fuchsia-600 text-white rounded-full shadow hover:bg-fuchsia-700 text-sm"
+          >
+            Support
+          </button>
+        )}
+
+        {/* Expanded support panel */}
+        {showDonation && (
+          <div className="bg-neutral-800 text-white rounded-lg shadow-xl p-3 w-64 animate-fadeIn">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium">Support this miniapp</span>
+              <button
+                onClick={() => setShowDonation(false)}
+                className="text-neutral-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <code className="block bg-black/50 p-2 rounded text-xs break-all mb-2">
               {DONATION_ADDRESS}
             </code>
 
             <button
               onClick={copyDonationAddress}
-              className="text-xs bg-neutral-700 hover:bg-neutral-600 text-white px-2 py-1 rounded"
-              aria-label="Copy donation address"
+              className="w-full bg-neutral-700 hover:bg-neutral-600 text-white text-sm py-2 rounded"
             >
-              Copy
-            </button>
-
-            <button
-              onClick={dismissDonation}
-              className="text-xs text-neutral-300 hover:text-white px-2 py-1 rounded"
-              aria-label="Dismiss donation"
-              title="Dismiss"
-            >
-              ✕
+              Copy address
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* Toast */}
       {toast && (
-        <div
-          className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow"
-          role="status"
-          aria-live="polite"
-        >
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow">
           {toast.msg}
         </div>
       )}
