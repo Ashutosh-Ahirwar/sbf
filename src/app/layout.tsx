@@ -12,20 +12,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-//production URL
-const appUrl = "https://search-by-fid.vercel.app";
+// URL Configuration
+// TIP: When testing locally with ngrok, update this to your ngrok URL temporarily 
+// so the embed works in the preview tool.
+const appUrl = process.env.NEXT_PUBLIC_URL || "https://search-by-fid.vercel.app";
 
-//Mini App Embed JSON using public images
+// Mini App Embed JSON
 const embed = {
   version: "1",
-  imageUrl: `${appUrl}/hero.png`, // Uses hero image for the share card (3:2 ratio recommended)
+  imageUrl: `${appUrl}/hero.png`, // Must be 3:2 aspect ratio (e.g. 1200x800)
   button: {
     title: "Start Searching",
     action: {
       type: "launch_frame",
-      name: "Search by fid",
+      name: "Search by FID",
       url: appUrl,
-      splashImageUrl: `${appUrl}/splash.png`, 
+      splashImageUrl: `${appUrl}/splash.png`, // Must be 200x200px
       splashBackgroundColor: "#F5F8FF",
     },
   },
@@ -34,8 +36,15 @@ const embed = {
 export const metadata: Metadata = {
   title: "Search by FID",
   description: "Search user by their FID",
+  openGraph: {
+    title: "Search by FID",
+    description: "Search user by their FID",
+  },
   other: {
+    // "fc:frame" is used for backward compatibility
     "fc:frame": JSON.stringify(embed),
+    // "fc:miniapp" is the modern standard
+    "fc:miniapp": JSON.stringify(embed),
   },
 };
 
@@ -47,7 +56,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-neutral-950`}
       >
         {children}
       </body>
