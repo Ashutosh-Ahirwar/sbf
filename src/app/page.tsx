@@ -1,9 +1,10 @@
-// src/app/page.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
+import { Search, Share, ExternalLink, Copy, Info, Heart, Bookmark } from "lucide-react";
 
+// --- Types ---
 type Profile = {
   fid: string;
   displayName?: string | null;
@@ -11,75 +12,81 @@ type Profile = {
   bio?: string | null;
   avatarUrl?: string | null;
   followerCount?: number | null;
-  raw?: any;
 };
 
 const DONATION_ADDRESS = "0xa6DEe9FdE9E1203ad02228f00bF10235d9Ca3752";
 const MINIAPP_NAME = "Search by FID";
 
 export default function Home() {
+  // State
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [sharing, setSharing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; id: number } | null>(null);
-
-  // Support popover visibility
   const [showDonation, setShowDonation] = useState(false);
+  
+  // Track if the app is already added to the user's client
+  const [isAdded, setIsAdded] = useState(false);
 
-  // SDK READY HANDLER (same robust logic)
-  useEffect(() => {
-    let mounted = true;
-    const MAX_ATTEMPTS = 12;
-    const RETRY_DELAY_MS = 400;
-
-    async function tryReady(sdkObj: any) {
-      if (!sdkObj?.actions?.ready) return false;
-      try {
-        await sdkObj.actions.ready();
-        return true;
-      } catch {
-        return false;
-      }
+  // --- Haptic Helper (Fixed) ---
+  const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' | 'success' | 'error' | 'warning' = 'light') => {
+    // Map the unified type to the specific SDK haptic methods
+    switch (type) {
+      case 'light':
+      case 'medium':
+      case 'heavy':
+        sdk.haptics.impactOccurred(type);
+        break;
+      case 'success':
+      case 'warning':
+      case 'error':
+        sdk.haptics.notificationOccurred(type);
+        break;
     }
-
-    async function init() {
-      if (await tryReady(sdk)) return;
-
-      let dynamic: any = null;
-      try {
-        const mod = await import("@farcaster/miniapp-sdk");
-        dynamic = mod.sdk ?? mod.default ?? mod;
-        if (dynamic && (await tryReady(dynamic))) return;
-      } catch {}
-
-      for (let i = 0; mounted && i < MAX_ATTEMPTS; i++) {
-        const candidate = dynamic ?? (globalThis as any).sdk ?? sdk;
-        if (candidate && (await tryReady(candidate))) return;
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      }
-    }
-
-    init();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  function showToast(message: string, ms = 2500) {
-    const id = Date.now();
-    setToast({ msg: message, id });
-    setTimeout(() => {
-      setToast((t) => (t?.id === id ? null : t));
-    }, ms);
-  }
+  // --- SDK Initialization & Context Check ---
+  useEffect(() => {
+    const initSdk = async () => {
+      if (sdk && sdk.actions && sdk.actions.ready) {
+        await sdk.actions.ready();
+      }
+      
+      // Check if the user has already added the app
+      try {
+        const context = await sdk.context;
+        if (context?.client?.added) {
+          setIsAdded(true);
+        }
+      } catch (err) {
+        console.error("Failed to load context", err);
+      }
+    };
+    initSdk();
+  }, []);
 
-  function farcasterExternalLink(p: Profile) {
-    return p.username ? `https://farcaster.xyz/${encodeURIComponent(p.username)}` : null;
-  }
+  // --- Actions ---
+  const showToast = (message: string) => {
+    setToast({ msg: message, id: Date.now() });
+    setTimeout(() => setToast(null), 2500);
+  };
 
-  async function searchFid() {
+  const addToFarcaster = async () => {
+    try {
+      triggerHaptic('medium');
+      await sdk.actions.addMiniApp();
+      setIsAdded(true);
+      showToast("Added to your apps!");
+    } catch (e) {
+      console.error(e);
+      // Note: This usually fails in dev/ngrok. It works on production domains.
+      showToast("Failed to add (Dev/Network Error)");
+    }
+  };
+
+  const searchFid = async () => {
+    triggerHaptic('light');
     setErrorMsg(null);
     setProfile(null);
 
@@ -93,215 +100,224 @@ export default function Home() {
       const json = await res.json();
 
       if (!res.ok) {
-        if (res.status === 404) setErrorMsg("FID not found.");
-        else if (res.status === 402) setErrorMsg("This FID requires paid Neynar credits.");
-        else setErrorMsg(json?.error ?? "Unknown error");
+        triggerHaptic('error');
+        setErrorMsg(json?.error ?? "Unknown error");
       } else {
+        triggerHaptic('success');
         setProfile(json);
       }
-    } catch (err: any) {
-      setErrorMsg("Network error: " + err?.message);
+    } catch (err) {
+      triggerHaptic('error');
+      setErrorMsg("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  function composeCastText(p: Profile) {
+  const shareAsCast = async () => {
+    if (!profile) return;
+    triggerHaptic('medium');
+    
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const handle = p.username ? `@${p.username}` : `fid:${p.fid}`;
-    const bio = p.bio ?? "";
-    const trimmedBio = bio.length > 140 ? bio.slice(0, 137) + "…" : bio;
-    const bioSection = trimmedBio ? `\n\n${trimmedBio}` : "";
-    const link = p.username ? `\n\nhttps://farcaster.xyz/${p.username}` : "";
-    const teaser = `\n\nJust found out fid ${p.fid} is ${handle}. Want to look up a specific fid? Try ${origin}`;
-    return `${handle}\nFID: ${p.fid}${bioSection}${link}${teaser}\n\n(Shared via ${MINIAPP_NAME})`;
-  }
-
-  async function shareAsCast(p: Profile) {
-    setSharing(true);
-    const text = composeCastText(p);
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const embeds = [{ type: "link", url: origin, title: MINIAPP_NAME }];
+    const handle = profile.username ? `@${profile.username}` : `fid:${profile.fid}`;
+    const text = `Check out ${handle} (FID: ${profile.fid})\n\nFound via ${MINIAPP_NAME}`;
+    
+    // FIX: Explicitly define type as [string] (Tuple of length 1) to satisfy SDK
+    const embeds = [origin] as [string];
 
     try {
-      if ((sdk as any)?.actions?.createCast)
-        try {
-          await (sdk as any).actions.createCast({ text, embeds });
-          showToast("Cast created.");
-          return;
-        } catch {}
-
-      if ((sdk as any)?.actions?.publish)
-        try {
-          await (sdk as any).actions.publish({ type: "cast", body: { text, embeds } });
-          showToast("Cast published.");
-          return;
-        } catch {}
-
-      await navigator.clipboard.writeText(text);
-      showToast("Cast copied to clipboard.");
-    } catch {
-      showToast("Unable to share.");
-    } finally {
-      setSharing(false);
+      if (sdk && sdk.actions && sdk.actions.composeCast) {
+        await sdk.actions.composeCast({ text, embeds });
+      } else {
+        // Fallback
+        await navigator.clipboard.writeText(`${text} ${origin}`);
+        showToast("Copied to clipboard");
+      }
+    } catch (e) {
+      showToast("Could not open cast composer");
     }
-  }
-
-  async function copyDonationAddress() {
-    try {
-      await navigator.clipboard.writeText(DONATION_ADDRESS);
-      showToast("Address copied");
-    } catch {
-      showToast("Copy failed");
-    }
-  }
-
-  function goToProfile(p: Profile) {
-    const url = farcasterExternalLink(p);
-    if (!url) return showToast("This profile has no username.");
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && !loading) searchFid();
-  }
+  };
 
   return (
-    <main className="min-h-screen bg-neutral-900 text-gray-100 p-4 sm:p-6 flex justify-center pb-28 sm:pb-0">
-      <div className="w-full max-w-2xl">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">{MINIAPP_NAME}</h1>
+    <main className="min-h-screen bg-neutral-950 text-gray-100 flex justify-center p-4">
+      <div className="w-full max-w-md flex flex-col gap-6 mt-8">
+        
+        {/* Header */}
+        <header className="flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 bg-gradient-to-tr from-fuchsia-600 to-violet-600 rounded-lg flex items-center justify-center">
+            <Search size={18} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400">
+            {MINIAPP_NAME}
+          </h1>
+        </header>
 
-        {/* Search */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        {/* Search Bar */}
+        <div className="relative group">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Enter FID (e.g. 2)"
+            onKeyDown={(e) => e.key === "Enter" && !loading && searchFid()}
+            placeholder="Enter FID (e.g. 3)"
             inputMode="numeric"
-            className="flex-1 px-4 py-3 rounded-lg border border-neutral-700 bg-neutral-800 text-gray-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-600"
+            autoComplete="off"
+            className="w-full pl-4 pr-14 py-4 rounded-xl bg-neutral-900 border border-neutral-800 text-lg focus:outline-none focus:ring-2 focus:ring-fuchsia-600/50 focus:border-fuchsia-600 transition-all placeholder:text-neutral-600"
           />
           <button
             onClick={searchFid}
             disabled={loading}
-            className="w-full sm:w-auto px-5 py-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white font-medium disabled:opacity-60"
+            className="absolute right-2 top-2 bottom-2 aspect-square bg-neutral-800 hover:bg-neutral-700 text-fuchsia-500 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50"
           >
-            {loading ? "Searching…" : "Search"}
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            ) : (
+              <Search size={20} />
+            )}
           </button>
         </div>
-
-        {errorMsg && (
-          <div className="mb-4 text-sm text-red-400 bg-neutral-800 p-3 rounded">{errorMsg}</div>
+        
+        {/* Add App Button - Only visible if not added */}
+        {!isAdded && (
+            <button 
+                onClick={addToFarcaster}
+                className="flex items-center justify-center gap-2 w-full py-3 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 text-sm font-medium hover:bg-neutral-800 hover:text-white hover:border-neutral-700 transition-all active:scale-95"
+            >
+                <Bookmark size={16} className="text-fuchsia-500" />
+                Add {MINIAPP_NAME} to your apps
+            </button>
         )}
 
-        {/* Profile */}
-        {profile && (
-          <article className="bg-white rounded-lg shadow p-4 sm:p-6 text-black">
-            <div className="flex flex-col sm:flex-row gap-4">
+        {/* Error State */}
+        {errorMsg && (
+          <div className="p-4 bg-red-900/20 border border-red-900/50 rounded-xl text-red-200 text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <Info size={18} className="shrink-0" />
+            {errorMsg}
+          </div>
+        )}
+
+        {/* Profile Card or Skeleton */}
+        {loading ? (
+          <ProfileSkeleton />
+        ) : profile ? (
+          <div className="bg-neutral-900 rounded-2xl p-5 border border-neutral-800 shadow-xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
               <img
-                src={profile.avatarUrl ?? "/default-avatar.svg"}
-                alt=""
-                className="w-24 h-24 rounded-md object-cover bg-gray-100 mx-auto sm:mx-0"
+                src={profile.avatarUrl ?? `https://avatar.vercel.sh/${profile.fid}`}
+                alt={profile.username ?? "User"}
+                className="w-20 h-20 rounded-full object-cover border-2 border-neutral-800 bg-neutral-800"
               />
-
-              <div className="flex-1">
-                <div className="flex flex-col sm:flex-row sm:justify-between">
-                  <div>
-                    <div className="text-lg sm:text-xl font-semibold">
-                      {profile.displayName ?? `fid:${profile.fid}`}
-                    </div>
-                    <div className="text-sm text-gray-700 mt-1">
-                      @{profile.username ?? `fid:${profile.fid}`}
-                    </div>
-                  </div>
-
-                  <div className="hidden sm:block text-sm text-gray-700">
-                    <b>{profile.followerCount ?? "—"}</b> Followers
-                  </div>
-                </div>
-
-                {profile.bio && (
-                  <p className="mt-3 text-sm text-gray-800 leading-relaxed">{profile.bio}</p>
-                )}
-
-                <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                  <button
-                    onClick={() => goToProfile(profile)}
-                    className="w-full sm:w-auto px-4 py-3 bg-fuchsia-600 text-white rounded-md shadow"
-                  >
-                    Go to profile
-                  </button>
-
-                  <button
-                    onClick={() => shareAsCast(profile)}
-                    disabled={sharing}
-                    className="w-full sm:w-auto px-4 py-3 rounded-md border bg-neutral-100 text-neutral-900 disabled:opacity-60"
-                  >
-                    {sharing ? "Sharing…" : "Share as cast"}
-                  </button>
-                </div>
-
-                <div className="mt-3 sm:hidden text-sm text-gray-700">
-                  <b>{profile.followerCount ?? "—"}</b> Followers
+              <div className="flex-1 min-w-0">
+                <h2 className="text-xl font-bold truncate">{profile.displayName}</h2>
+                <p className="text-fuchsia-400 text-sm truncate">@{profile.username ?? `fid:${profile.fid}`}</p>
+                <div className="flex items-center gap-4 mt-3 text-sm text-neutral-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-gray-200 font-medium">{profile.followerCount?.toLocaleString() ?? 0}</span> followers
+                  </span>
                 </div>
               </div>
             </div>
-          </article>
-        )}
 
-        {!profile && !errorMsg && (
-          <p className="mt-6 text-sm text-neutral-400">Enter a numeric FID and press Search.</p>
-        )}
-      </div>
+            {profile.bio && (
+              <p className="mt-4 text-neutral-300 text-sm leading-relaxed line-clamp-4">
+                {profile.bio}
+              </p>
+            )}
 
-      {/* -------------------------------- */}
-      {/* Support Button + Expandable Panel */}
-      {/* -------------------------------- */}
-      <div className="fixed bottom-4 right-4 z-50">
-
-        {/* Support button (when collapsed) */}
-        {!showDonation && (
-          <button
-            onClick={() => setShowDonation(true)}
-            className="px-4 py-2 bg-fuchsia-600 text-white rounded-full shadow hover:bg-fuchsia-700 text-sm"
-          >
-            Support
-          </button>
-        )}
-
-        {/* Expanded support panel */}
-        {showDonation && (
-          <div className="bg-neutral-800 text-white rounded-lg shadow-xl p-3 w-64 animate-fadeIn">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium">Support this miniapp</span>
+            <div className="grid grid-cols-2 gap-3 mt-6">
               <button
-                onClick={() => setShowDonation(false)}
-                className="text-neutral-400 hover:text-white text-sm"
+                onClick={shareAsCast}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl bg-neutral-800 hover:bg-neutral-750 text-white font-medium transition-all active:scale-95"
               >
-                ✕
+                <Share size={18} />
+                Share
               </button>
+              <a
+                href={`https://warpcast.com/${profile.username ?? ""}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => triggerHaptic('light')}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-black font-medium hover:bg-gray-100 transition-all active:scale-95"
+              >
+                Profile
+                <ExternalLink size={18} />
+              </a>
             </div>
-
-            <code className="block bg-black/50 p-2 rounded text-xs break-all mb-2">
-              {DONATION_ADDRESS}
-            </code>
-
-            <button
-              onClick={copyDonationAddress}
-              className="w-full bg-neutral-700 hover:bg-neutral-600 text-white text-sm py-2 rounded"
-            >
-              Copy address
-            </button>
           </div>
+        ) : (
+          // Empty State
+          !errorMsg && (
+            <div className="text-center py-12 text-neutral-500">
+              <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search size={24} className="opacity-20" />
+              </div>
+              <p>Search for any Farcaster ID</p>
+            </div>
+          )
+        )}
+
+        {/* Support / Donation (Minimalist) */}
+        <div className="fixed bottom-6 right-6 z-50">
+            {!showDonation ? (
+                <button 
+                    onClick={() => { setShowDonation(true); triggerHaptic('light'); }}
+                    className="w-10 h-10 bg-neutral-800 hover:bg-neutral-700 text-fuchsia-500 rounded-full shadow-lg flex items-center justify-center border border-neutral-700 transition-all"
+                >
+                    <Heart size={18} />
+                </button>
+            ) : (
+                <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-2xl shadow-2xl w-72 animate-in slide-in-from-bottom-4">
+                    <div className="flex justify-between items-center mb-3">
+                        <span className="text-sm font-medium text-gray-200">Support Development</span>
+                        <button onClick={() => setShowDonation(false)} className="text-neutral-500 hover:text-white">✕</button>
+                    </div>
+                    <div className="bg-black/50 p-3 rounded-lg flex items-center justify-between gap-2 border border-neutral-800">
+                        <code className="text-xs text-neutral-400 truncate flex-1">{DONATION_ADDRESS}</code>
+                        <button 
+                            onClick={async () => {
+                                await navigator.clipboard.writeText(DONATION_ADDRESS);
+                                showToast("Address Copied");
+                                triggerHaptic('success');
+                            }}
+                            className="text-fuchsia-500 hover:text-fuchsia-400"
+                        >
+                            <Copy size={16} />
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+
+        {/* Toast Notification */}
+        {toast && (
+            <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-white text-black px-6 py-3 rounded-full shadow-2xl font-medium text-sm z-50 animate-in slide-in-from-top-4 fade-in">
+                {toast.msg}
+            </div>
         )}
       </div>
-
-      {/* Toast */}
-      {toast && (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 bg-black/90 text-white px-4 py-2 rounded-md text-sm shadow">
-          {toast.msg}
-        </div>
-      )}
     </main>
+  );
+}
+
+// --- Sub-components ---
+
+function ProfileSkeleton() {
+  return (
+    <div className="bg-neutral-900 rounded-2xl p-5 border border-neutral-800 shadow-xl">
+      <div className="flex items-start gap-4 animate-pulse">
+        <div className="w-20 h-20 rounded-full bg-neutral-800" />
+        <div className="flex-1 space-y-3 py-1">
+          <div className="h-5 bg-neutral-800 rounded w-3/4" />
+          <div className="h-4 bg-neutral-800 rounded w-1/3" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-2 animate-pulse">
+        <div className="h-4 bg-neutral-800 rounded w-full" />
+        <div className="h-4 bg-neutral-800 rounded w-5/6" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 mt-6">
+        <div className="h-12 bg-neutral-800 rounded-xl" />
+        <div className="h-12 bg-neutral-800 rounded-xl" />
+      </div>
+    </div>
   );
 }
