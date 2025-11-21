@@ -120,7 +120,9 @@ export default function Home() {
     
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const handle = profile.username ? `@${profile.username}` : `fid:${profile.fid}`;
-    const text = `Check out ${handle} (FID: ${profile.fid})\n\nFound via ${MINIAPP_NAME}`;
+    
+    // UPDATED: Changed text to be more curious/viral style
+    const text = `Just found out who is FID ${profile.fid}...\n\nIt's ${handle}`;
     
     // FIX: Explicitly define type as [string] (Tuple of length 1) to satisfy SDK
     const embeds = [origin] as [string];
