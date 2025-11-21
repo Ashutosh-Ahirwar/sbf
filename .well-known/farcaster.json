@@ -1,0 +1,34 @@
+{
+  "frame": {
+    "name": "Search by FID",
+    "version": "1",
+    "iconUrl": "https://search-by-fid.vercel.app/icon.png",
+    "homeUrl": "https://search-by-fid.vercel.app",
+    "imageUrl": "https://search-by-fid.vercel.app/image.png",
+    "buttonTitle": "Start Searching",
+    "splashImageUrl": "https://search-by-fid.vercel.app/splash.png",
+    "splashBackgroundColor": "#F5F8FF",
+    "webhookUrl": "https://search-by-fid.vercel.app/api/webhook",
+    "subtitle": "Search user by fid",
+    "description": "Search any account using fid",
+    "screenshotUrls": [
+      "https://search-by-fid.vercel.app/screenshot1.png"
+    ],
+    "primaryCategory": "utility",
+    "tags": [
+      "search",
+      "fid",
+      "username"
+    ],
+    "heroImageUrl": "https://search-by-fid.vercel.app/hero.png",
+    "tagline": "Search user by fid",
+    "ogTitle": "Search by fid",
+    "ogDescription": "Search any Farcaster user by FID.",
+    "ogImageUrl": "https://search-by-fid.vercel.app/hero.png"
+  },
+  "accountAssociation": {
+    "header": "eyJmaWQiOjEzNzEyODgsInR5cGUiOiJhdXRoIiwia2V5IjoiMHg4NGM0N0JDNDBhNDY4MGI5QjFjM2I2YUY3ZkZjYjg4ODhkYzBEMzU3In0",
+    "payload": "eyJkb21haW4iOiJzZWFyY2gtYnktZmlkLnZlcmNlbC5hcHAifQ",
+    "signature": "e/5+tOCLPnjbG8I3ZFGmuWIHPswqG/2acarO34G9AG0QNrOguDAbRQxDzhMEzPVSqwABSy68LRNX6g+jdruDoxs="
+  }
+}
