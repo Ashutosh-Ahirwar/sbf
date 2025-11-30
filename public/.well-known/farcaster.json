@@ -25,7 +25,7 @@
     "ogTitle": "Search by fid",
     "ogDescription": "Search any Farcaster user by FID.",
     "ogImageUrl": "https://search-by-fid.vercel.app/hero.png",
-    "noindex": true
+    "noindex": false
   },
   "baseBuilder": {
     "ownerAddress": "0xd505989c1d95dEfcaE778475D494F5f51776Fe46"
