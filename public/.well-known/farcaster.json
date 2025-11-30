@@ -26,6 +26,9 @@
     "ogDescription": "Search any Farcaster user by FID.",
     "ogImageUrl": "https://search-by-fid.vercel.app/hero.png"
   },
+  "baseBuilder": {
+    "ownerAddress": "0xd505989c1d95dEfcaE778475D494F5f51776Fe46"
+  },
   "accountAssociation": {
     "header": "eyJmaWQiOjEzNzEyODgsInR5cGUiOiJhdXRoIiwia2V5IjoiMHg4NGM0N0JDNDBhNDY4MGI5QjFjM2I2YUY3ZkZjYjg4ODhkYzBEMzU3In0",
     "payload": "eyJkb21haW4iOiJzZWFyY2gtYnktZmlkLnZlcmNlbC5hcHAifQ",
